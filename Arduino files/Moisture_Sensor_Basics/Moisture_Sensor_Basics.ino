@@ -7,10 +7,13 @@ Current Sketch assumes that you have a capacitive moisture sensor with a range f
 #include <Wire.h>
 #include <RH_RF95.h>
 
-#define MASTER 0//Binary, the master unit will be the one with the GSM module in any given set of instalations
+#define MASTER 1//Binary, the master unit will be the one with the GSM module in any given set of instalations
                   //the sub modules will send thier data to the master module to then have it all commited.
                   //There should also eventually be a setting for non-Lora modules that exist on thier own
                   //and (ideally) a set for non-gsm modules that operate over LoRaWAN
+
+#define MOI_MAX = 846//The maximum capacitive value you have observed for the current moisture sensor completly dry
+#define MOI_MIN = 371//The minimum value observed by submerging the sensor to it's depth line in water
 
 //for feather m0 RFM9x
 #define RFM95_CS 8
@@ -23,16 +26,12 @@ Current Sketch assumes that you have a capacitive moisture sensor with a range f
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT);
 
-#define MOI_MAX = 846//The maximum capacitive value you have observed for the current moisture sensor completly dry
-#define MOI_MIN = 371//The minimum value observed by submerging the sensor to it's depth line in water
-
 int moisture = 0;
 void setup() {
   // put your setup code here, to run once:
   //START : Setup code for LoRa Radio, taken from older sender sketch
   pinMode(RFM95_RST, OUTPUT);
   digitalWrite(RFM95_RST, HIGH);
-  while (!Serial);
   Serial.begin(9600);
   delay(100);
 
@@ -119,4 +118,33 @@ void loop() {
     }
     delay(1000);
   }
+  else if(MASTER){
+    // Should be a message for us now   
+    uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+    uint8_t len = sizeof(buf);
+    
+    if (rf95.recv(buf, &len))
+    {
+      digitalWrite(LED, HIGH);
+      RH_RF95::printBuffer("Received: ", buf, len);
+      Serial.print("Got: ");
+      Serial.println((char*)buf);
+       Serial.print("RSSI: ");
+      Serial.println(rf95.lastRssi(), DEC);
+      delay(10);
+      // Send a reply
+      delay(200); // may or may not be needed
+      uint8_t data[] = "recieved";
+      rf95.send(data, sizeof(data));
+      rf95.waitPacketSent();
+      Serial.println("Sent a reply");
+      digitalWrite(LED, LOW);
+    }
+    else
+    {
+      Serial.println("Receive failed");
+    }
+  }
 }
+  
+
