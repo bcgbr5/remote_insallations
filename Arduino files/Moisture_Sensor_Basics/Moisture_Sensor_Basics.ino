@@ -1,11 +1,12 @@
 /***********
 Sketch for Feather MO
-Current Sketch assumes that you have a capacitive moisture sensor with a range from  and 
+Current Sketch assumes that you have a capacitive moisture sensor on A0, see Define MOI_MAX/MIN below
 
 ************/
 #include <SPI.h>
 #include <Wire.h>
 #include <RH_RF95.h>
+#include <Adafruit_GPS.h>
 
 #define MASTER 1//Binary, the master unit will be the one with the GSM module in any given set of instalations
                   //the sub modules will send thier data to the master module to then have it all commited.
@@ -15,6 +16,9 @@ Current Sketch assumes that you have a capacitive moisture sensor with a range f
 #define HAS_SENSOR 1//On the offchance for some reason a GSM enabled unit doesn't have a moisture sensor (for example if it's only acting as a relay for another one in an area with no coverage), 
                     //we'll keep the moisture sensor code inside of one of these. This will also make switching out to the I2C style or resistive style sensors later easier,by allowing another value if that becomes neccesary.
 #define HAS_GPS 1//This unit has GPS
+#define GPSSerial Serial1 //This needs to be a macro and can't be defined in an if statment. There's probably a better way
+                          //to do this, that I don't know about.
+#define GPSECHO false
 //#define LOCATION_CODE //TODO This will need to be defined either as a numerical value that the recieving backend will understand, or as an array of [LAT, LONG]. Either this or the HAS_GPS flag need to be enabled
 #define MOI_MAX = 846//The maximum capacitive value you have observed for the current moisture sensor completly dry. Due to varience in the sensors and wires, this may vary wqith the unit.
 #define MOI_MIN = 371//The minimum value observed by submerging the sensor to it's depth line in water
@@ -29,15 +33,14 @@ Current Sketch assumes that you have a capacitive moisture sensor with a range f
 RH_RF95 rf95(RFM95_CS, RFM95_INT);
 
 int moisture = 0;
+uint32_t timer = millis();
+Adafruit_GPS GPS(&GPSSerial);
 void setup() {
-  // put your setup code here, to run once:
   //START : Setup code for LoRa Radio, taken from older sender sketch
   pinMode(RFM95_RST, OUTPUT);
   digitalWrite(RFM95_RST, HIGH);
-  Serial.begin(9600);
+  Serial.begin(115200);
   delay(100);
-
-  Serial.println("Feather LoRa TX Test!");
  
   // manual reset
   digitalWrite(RFM95_RST, LOW);
@@ -51,43 +54,88 @@ void setup() {
   }
   Serial.println("LoRa radio init OK!");
  
-  // Defaults after init are 434.0MHz, modulation GFSK_Rb250Fd250, +13dbM
   if (!rf95.setFrequency(RF95_FREQ)) {
     Serial.println("setFrequency failed");
     while (1);
   }
   Serial.print("Set Freq to: "); Serial.println(RF95_FREQ);
-  
-  // Defaults after init are 434.0MHz, 13dBm, Bw = 125 kHz, Cr = 4/5, Sf = 128chips/symbol, CRC on
- 
+   
   // The default transmitter power is 13dBm, using PA_BOOST.
   // If you are using RFM95/96/97/98 modules which uses the PA_BOOST transmitter pin, then 
   // you can set transmitter powers from 5 to 23 dBm:
   rf95.setTxPower(23, false);
   //END LoRa Setup
 
-  
-
+  //START: GPS Setup Code
+  if(HAS_GPS){
+    GPS.begin(9600);
+    GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);
+    GPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ); // 1 Hz update rate
+    GPS.sendCommand(PGCMD_ANTENNA);
+    delay(1000);
+    GPSSerial.println(PMTK_Q_RELEASE);
+  }
+  //END GPS Setup  
 }
 
 int16_t packetnum = 0;  // packet counter, we increment per xmission
 
 void loop() {
-  if(HAS_SENSOR){
-    moisture = analogRead(0);//Anolog reading of capaicitive moisture sensor
-    Serial.print("\nMoisture: ");
-    Serial.print(moisture);
-    delay(500);
+  if(HAS_GPS){
+    char c = GPS.read();
+    if(GPSECHO){
+      if(c){
+      Serial.print(c);
+      }
+    }
+    if (GPS.newNMEAreceived()) {
+    // a tricky thing here is if we print the NMEA sentence, or data
+    // we end up not listening and catching other sentences!
+    // so be very wary if using OUTPUT_ALLDATA and trytng to print out data
+    Serial.println(GPS.lastNMEA()); // this also sets the newNMEAreceived() flag to false
+    if (!GPS.parse(GPS.lastNMEA())) // this also sets the newNMEAreceived() flag to false
+      return; // we can fail to parse a sentence in which case we should just wait for another
+    }
+    // if millis() or timer wraps around, we'll just reset it
+    if (timer > millis()){
+      timer = millis();
+    }
+    if (millis() - timer > 10000) {
+      timer = millis(); // reset the timer
+      Serial.print("\nTime: ");
+      Serial.print(GPS.hour, DEC); Serial.print(':');
+      Serial.print(GPS.minute, DEC); Serial.print(':');
+      Serial.print(GPS.seconds, DEC); Serial.print('.');
+      Serial.println(GPS.milliseconds);
+      Serial.print("Date: ");
+      Serial.print(GPS.day, DEC); Serial.print('/');
+      Serial.print(GPS.month, DEC); Serial.print("/20");
+      Serial.println(GPS.year, DEC);
+      Serial.print("Fix: "); Serial.print((int)GPS.fix);
+      Serial.print(" quality: "); Serial.println((int)GPS.fixquality);
+      if (GPS.fix) {
+        Serial.print("Location: ");
+        Serial.print(GPS.latitude, 4); Serial.print(GPS.lat);
+        Serial.print(", ");
+        Serial.print(GPS.longitude, 4); Serial.println(GPS.lon);
+        Serial.print("Speed (knots): "); Serial.println(GPS.speed);
+        Serial.print("Angle: "); Serial.println(GPS.angle);
+        Serial.print("Altitude: "); Serial.println(GPS.altitude);
+        Serial.print("Satellites: "); Serial.println((int)GPS.satellites);
+      }
+    }
+  
   }
-
-
   if(!MASTER){//This designates this unit as just a moisture sensor that will transmit to the master with the GSM module
     Serial.println("Sending to rf95_server");
     // Send a message to rf95_server
+    moisture = analogRead(0);//Anolog reading of capaicitive moisture sensor
+    Serial.print("\nLocal Moisture: ");
+    Serial.print(moisture);
     
     char radiopacket[10];
     itoa(moisture,radiopacket,10);
-    Serial.print("Sending "); Serial.println(radiopacket);
+    Serial.print("Sending :"); Serial.println(radiopacket);
 
     Serial.println("Sending..."); delay(10);
     rf95.send((uint8_t *)radiopacket, 10);
@@ -117,7 +165,7 @@ void loop() {
         Serial.println("Receive failed");
       }
     }
-    delay(1000);
+    delay(5000);
   }
   else if(MASTER){//Designates unit as having a GSM module.  
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
@@ -126,22 +174,28 @@ void loop() {
     if (rf95.recv(buf, &len))
     {
       //digitalWrite(LED, HIGH);
-      RH_RF95::printBuffer("Received: ", buf, len);
-      Serial.print("Got: ");
+      //RH_RF95::printBuffer("Received: ", buf, len);
+      Serial.print("Remote Moisture: ");
       Serial.println((char*)buf);
-       Serial.print("RSSI: ");
-      Serial.println(rf95.lastRssi(), DEC);
+      //Serial.print("RSSI: ");
+      //Serial.println(rf95.lastRssi(), DEC);
+      if(HAS_SENSOR){
+      moisture = analogRead(0);//Anolog reading of capaicitive moisture sensor
+      Serial.print("Local Moisture: ");
+      Serial.print(moisture);
+      }
+      
       delay(10);
       // Send a reply
       delay(200); // may or may not be needed
       uint8_t data[] = "recieved";
       rf95.send(data, sizeof(data));
       rf95.waitPacketSent();
-      Serial.println("Sent a reply");
+      Serial.println("\nSent a reply\n");
     }
     else
     {
-      Serial.println("Receive failed");
+      delay(5000);
     }
   }
 }
