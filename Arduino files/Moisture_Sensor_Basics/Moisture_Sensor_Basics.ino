@@ -85,51 +85,47 @@ void loop() {
     Serial.println("Sending to rf95_server");
     // Send a message to rf95_server
     
-    int radiopacket = moisture;
+    char radiopacket[10];
+    itoa(moisture,radiopacket,10);
     Serial.print("Sending "); Serial.println(radiopacket);
 
     Serial.println("Sending..."); delay(10);
-    rf95.send((uint8_t *) radiopacket, 1);
+    rf95.send((uint8_t *)radiopacket, 10);
    
     Serial.println("Waiting for packet to complete..."); delay(10);
     rf95.waitPacketSent();
-    // Now wait for a reply
+    //Now wait for a reply
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
     uint8_t len = sizeof(buf);
    
     Serial.println("Waiting for reply..."); delay(10);
-    if (rf95.waitAvailableTimeout(1000))
+    if (rf95.waitAvailableTimeout(5000))
     { 
       // Should be a reply message for us now   
       if (rf95.recv(buf, &len))
      {
-        digitalWrite(LED, HIGH);
+//        digitalWrite(LED, HIGH);
         Serial.print("Got reply: ");
         Serial.println((char*)buf);
         Serial.print("RSSI: ");
         Serial.println(rf95.lastRssi(), DEC);    
         delay(250);
-        digitalWrite(LED, LOW);
+//        digitalWrite(LED, LOW);
       }
       else
       {
         Serial.println("Receive failed");
       }
     }
-    else
-    {
-      Serial.println("No reply, is there a master around?");
-    }
     delay(1000);
   }
-  else if(MASTER){//Designates unit as having a GSM module.
-    // Should be a message for us now   
+  else if(MASTER){//Designates unit as having a GSM module.  
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
     uint8_t len = sizeof(buf);
     
     if (rf95.recv(buf, &len))
     {
-      digitalWrite(LED, HIGH);
+      //digitalWrite(LED, HIGH);
       RH_RF95::printBuffer("Received: ", buf, len);
       Serial.print("Got: ");
       Serial.println((char*)buf);
@@ -142,7 +138,6 @@ void loop() {
       rf95.send(data, sizeof(data));
       rf95.waitPacketSent();
       Serial.println("Sent a reply");
-      digitalWrite(LED, LOW);
     }
     else
     {
@@ -151,4 +146,3 @@ void loop() {
   }
 }
   
-
