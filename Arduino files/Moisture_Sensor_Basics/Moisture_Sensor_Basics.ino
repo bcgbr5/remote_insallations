@@ -132,13 +132,45 @@ void loop() {
     moisture = analogRead(0);//Anolog reading of capaicitive moisture sensor
     Serial.print("\nLocal Moisture: ");
     Serial.print(moisture);
+
+    char radiopacket[50];
+    char temp[10];
+    radiopacket[0]='m';
+    radiopacket[1]=':';
+    itoa(moisture,radiopacket+2,10);//this shoudl be 3 characters
+    radiopacket[5]='h';
+    radiopacket[6]=':';
+    itoa(GPS.hour,radiopacket+7,10);
+    if(radiopacket[8]!='\0'){
+      radiopacket[8]='m';
+      radiopacket[10]=':';
+      itoa(GPS.minute,radiopacket+11,10);
+      radiopacket[13]='s';
+      radiopacket[14]=':';
+      itoa(GPS.seconds,radiopacket+15,10);
+      radiopacket[17]='u';
+      radiopacket[18]=':';
+      itoa(GPS.milliseconds,radiopacket+19,10);
+      radiopacket[20]='d';
+      radiopacket[21]=':';
+      itoa(GPS.day,radiopacket+23,10);
+      itoa(GPS.month,radiopacket+25,10);
+      itoa(GPS.year,radiopacket+27,10);
+      radiopacket[31]='l';
+      radiopacket[32]=':';
+      itoa(GPS.lat,radiopacket+33,10);
+      radiopacket[37]=',';
+      itoa(GPS.lon,radiopacket+38,10);
+    }
+    else{
+      radiopacket[07] == ' ';
+    }
     
-    char radiopacket[10];
-    itoa(moisture,radiopacket,10);
+    
     Serial.print("Sending :"); Serial.println(radiopacket);
 
     Serial.println("Sending..."); delay(10);
-    rf95.send((uint8_t *)radiopacket, 10);
+    rf95.send((uint8_t *)radiopacket, sizeof(radiopacket));
    
     Serial.println("Waiting for packet to complete..."); delay(10);
     rf95.waitPacketSent();
