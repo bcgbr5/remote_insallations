@@ -8,18 +8,19 @@ Current Sketch assumes that you have a capacitive moisture sensor on A0, see Def
 #include <RH_RF95.h>
 #include <Adafruit_GPS.h>
 
-#define MASTER 1//Binary, the master unit will be the one with the GSM module in any given set of instalations
+#define MASTER 0//Binary, the master unit will be the one with the GSM module in any given set of instalations
                   //the sub modules will send thier data to the master module to then have it all commited.
                   //There should also eventually be a setting for non-Lora modules that exist on thier own
                   //and (ideally) a set for non-gsm modules that operate over LoRaWAN
 
 #define HAS_SENSOR 1//On the offchance for some reason a GSM enabled unit doesn't have a moisture sensor (for example if it's only acting as a relay for another one in an area with no coverage), 
                     //we'll keep the moisture sensor code inside of one of these. This will also make switching out to the I2C style or resistive style sensors later easier,by allowing another value if that becomes neccesary.
-#define HAS_GPS 1//This unit has GPS
+#define HAS_GPS 0//This unit has GPS
 #define GPSSerial Serial1 //This needs to be a macro and can't be defined in an if statment. There's probably a better way
                           //to do this, that I don't know about.
 #define GPSECHO false
-//#define LOCATION_CODE //TODO This will need to be defined either as a numerical value that the recieving backend will understand, or as an array of [LAT, LONG]. Either this or the HAS_GPS flag need to be enabled
+#define LOCATION_CODE "LAT:38.950503,LON:-92.395701" //TODO This will need to be defined either as a numerical value that the recieving backend will understand, or as an array of [LAT, LONG]. Either this or the HAS_GPS flag need to be enabled
+#define LOC_CODE_LEN 28
 #define MOI_MAX = 846//The maximum capacitive value you have observed for the current moisture sensor completly dry. Due to varience in the sensors and wires, this may vary wqith the unit.
 #define MOI_MIN = 371//The minimum value observed by submerging the sensor to it's depth line in water
 
@@ -133,37 +134,49 @@ void loop() {
     Serial.print("\nLocal Moisture: ");
     Serial.print(moisture);
 
-    char radiopacket[50];
-    char temp[10];
-    radiopacket[0]='m';
-    radiopacket[1]=':';
-    itoa(moisture,radiopacket+2,10);//this shoudl be 3 characters
-    radiopacket[5]='h';
-    radiopacket[6]=':';
-    itoa(GPS.hour,radiopacket+7,10);
-    if(radiopacket[8]!='\0'){
-      radiopacket[8]='m';
-      radiopacket[10]=':';
-      itoa(GPS.minute,radiopacket+11,10);
-      radiopacket[13]='s';
-      radiopacket[14]=':';
-      itoa(GPS.seconds,radiopacket+15,10);
-      radiopacket[17]='u';
-      radiopacket[18]=':';
-      itoa(GPS.milliseconds,radiopacket+19,10);
-      radiopacket[20]='d';
-      radiopacket[21]=':';
-      itoa(GPS.day,radiopacket+23,10);
-      itoa(GPS.month,radiopacket+25,10);
-      itoa(GPS.year,radiopacket+27,10);
-      radiopacket[31]='l';
-      radiopacket[32]=':';
-      itoa(GPS.lat,radiopacket+33,10);
-      radiopacket[37]=',';
-      itoa(GPS.lon,radiopacket+38,10);
+    char *radiopacket;
+    if(HAS_GPS){
+      char temp[10];
+      //TODO, work out size of radiopacket for GPS
+      radiopacket[0]='M';
+      radiopacket[1]=':';
+      itoa(moisture,radiopacket+2,10);//this shoudl be 3 characters
+      radiopacket[5]='h';
+      radiopacket[6]=':';
+      itoa(GPS.hour,radiopacket+7,10);
+      if(radiopacket[8]!='\0'){
+        radiopacket[8]='m';
+        radiopacket[10]=':';
+        itoa(GPS.minute,radiopacket+11,10);
+        radiopacket[13]='s';
+        radiopacket[14]=':';
+        itoa(GPS.seconds,radiopacket+15,10);
+        radiopacket[17]='u';
+        radiopacket[18]=':';
+        itoa(GPS.milliseconds,radiopacket+19,10);
+        radiopacket[20]='d';
+        radiopacket[21]=':';
+        itoa(GPS.day,radiopacket+23,10);
+        itoa(GPS.month,radiopacket+25,10);
+        itoa(GPS.year,radiopacket+27,10);
+        radiopacket[31]='l';
+        radiopacket[32]=':';
+        itoa(GPS.lat,radiopacket+33,10);
+        radiopacket[37]=',';
+        itoa(GPS.lon,radiopacket+38,10);
+      }
+      else{
+        radiopacket[07] == ' ';
+      }
     }
     else{
-      radiopacket[07] == ' ';
+      radiopacket = (char*)malloc(sizeof(char)*34);
+      radiopacket[0]='M';
+      radiopacket[1]=':';
+      itoa(moisture,radiopacket+2,10);//Should be 3 characters, so radiopacket[2-4]
+      for(int i=0;i<LOC_CODE_LEN;i++){
+        radiopacket[5+i]=LOCATION_CODE[i];
+      }
     }
     
     
@@ -197,7 +210,8 @@ void loop() {
         Serial.println("Receive failed");
       }
     }
-    delay(5000);
+    free(radiopacket);
+    delay(5*60*1000);
   }
   else if(MASTER){//Designates unit as having a GSM module.  
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
