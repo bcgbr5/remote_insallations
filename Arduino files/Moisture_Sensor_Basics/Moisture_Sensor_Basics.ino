@@ -15,7 +15,7 @@ Current Sketch assumes that you have a capacitive moisture sensor on A0, see Def
 
 #define HAS_SENSOR 1//On the offchance for some reason a GSM enabled unit doesn't have a moisture sensor (for example if it's only acting as a relay for another one in an area with no coverage), 
                     //we'll keep the moisture sensor code inside of one of these. This will also make switching out to the I2C style or resistive style sensors later easier,by allowing another value if that becomes neccesary.
-#define HAS_GPS 0//This unit has GPS
+#define HAS_GPS 1//This unit has GPS
 #define GPSSerial Serial1 //This needs to be a macro and can't be defined in an if statment. There's probably a better way
                           //to do this, that I don't know about.
 #define GPSECHO false
@@ -134,43 +134,38 @@ void loop() {
     Serial.print("\nLocal Moisture: ");
     Serial.print(moisture);
 
-    char *radiopacket;
+    char radiopacket[80];
     if(HAS_GPS){
-      char temp[10];
-      //TODO, work out size of radiopacket for GPS
-      radiopacket[0]='M';
-      radiopacket[1]=':';
-      itoa(moisture,radiopacket+2,10);//this shoudl be 3 characters
-      radiopacket[5]='h';
-      radiopacket[6]=':';
-      itoa(GPS.hour,radiopacket+7,10);
-      if(radiopacket[8]!='\0'){
-        radiopacket[8]='m';
-        radiopacket[10]=':';
-        itoa(GPS.minute,radiopacket+11,10);
-        radiopacket[13]='s';
-        radiopacket[14]=':';
-        itoa(GPS.seconds,radiopacket+15,10);
-        radiopacket[17]='u';
-        radiopacket[18]=':';
-        itoa(GPS.milliseconds,radiopacket+19,10);
-        radiopacket[20]='d';
-        radiopacket[21]=':';
-        itoa(GPS.day,radiopacket+23,10);
-        itoa(GPS.month,radiopacket+25,10);
-        itoa(GPS.year,radiopacket+27,10);
-        radiopacket[31]='l';
-        radiopacket[32]=':';
-        itoa(GPS.lat,radiopacket+33,10);
-        radiopacket[37]=',';
-        itoa(GPS.lon,radiopacket+38,10);
+      char temp[5];
+      temp[0]='M';
+      temp[1]=':';
+      itoa(moisture,temp+2,10);//this shoudl be 3 characters
+      String rp(temp);
+      String timecode();
+      rp.concat("t:");
+      rp.concat(GPS.hour);
+      rp.concat(":");
+      rp.concat(GPS.minute);
+      rp.concat(":");
+      rp.concat(GPS.seconds);
+      rp.concat(".");
+      rp.concat(GPS.milliseconds);
+      rp.concat("d:");
+      rp.concat(GPS.day);
+      rp.concat(GPS.month);
+      rp.concat(GPS.year);
+      rp.concat("lat:");
+      rp.concat(GPS.lat);
+      rp.concat("lon:");
+      rp.concat(GPS.lon);
+      Serial.println(rp);
+      Serial.println(radiopacket);
+      for(int i=0;i<80;i++){
+        radiopacket[i]=rp[i];      
       }
-      else{
-        radiopacket[07] == ' ';
-      }
-    }
+    }      
     else{
-      radiopacket = (char*)malloc(sizeof(char)*34);
+      //radiopacket = (char*)malloc(sizeof(char));
       radiopacket[0]='M';
       radiopacket[1]=':';
       itoa(moisture,radiopacket+2,10);//Should be 3 characters, so radiopacket[2-4]
@@ -210,8 +205,7 @@ void loop() {
         Serial.println("Receive failed");
       }
     }
-    free(radiopacket);
-    delay(5*60*1000);
+    delay(30*1000);
   }
   else if(MASTER){//Designates unit as having a GSM module.  
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
