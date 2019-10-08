@@ -13,7 +13,7 @@ Current Sketch assumes that you have a capacitive moisture sensor on A0, see Def
                   //There should also eventually be a setting for non-Lora modules that exist on thier own
                   //and (ideally) a set for non-gsm modules that operate over LoRaWAN
 
-#define HAS_SENSOR 1//On the offchance for some reason a GSM enabled unit doesn't have a moisture sensor (for example if it's only acting as a relay for another one in an area with no coverage), 
+#define HAS_SENSOR 1//On the offchance for some reason a GSM enabled unit doesn't have a moisture sensor (for example if it's only acting as a relay for another one in an area with no coverage),
                     //we'll keep the moisture sensor code inside of one of these. This will also make switching out to the I2C style or resistive style sensors later easier,by allowing another value if that becomes neccesary.
 #define HAS_GPS 0//This unit has GPS
 #define GPSSerial Serial1 //This needs to be a macro and can't be defined in an if statment. There's probably a better way
@@ -42,27 +42,27 @@ void setup() {
   digitalWrite(RFM95_RST, HIGH);
   Serial.begin(115200);
   delay(100);
- 
+
   // manual reset
   digitalWrite(RFM95_RST, LOW);
   delay(10);
   digitalWrite(RFM95_RST, HIGH);
   delay(10);
- 
+
   while (!rf95.init()) {
     Serial.println("LoRa radio init failed");
     while (1);
   }
   Serial.println("LoRa radio init OK!");
- 
+
   if (!rf95.setFrequency(RF95_FREQ)) {
     Serial.println("setFrequency failed");
     while (1);
   }
   Serial.print("Set Freq to: "); Serial.println(RF95_FREQ);
-   
+
   // The default transmitter power is 13dBm, using PA_BOOST.
-  // If you are using RFM95/96/97/98 modules which uses the PA_BOOST transmitter pin, then 
+  // If you are using RFM95/96/97/98 modules which uses the PA_BOOST transmitter pin, then
   // you can set transmitter powers from 5 to 23 dBm:
   rf95.setTxPower(23, false);
   //END LoRa Setup
@@ -76,7 +76,7 @@ void setup() {
     delay(1000);
     GPSSerial.println(PMTK_Q_RELEASE);
   }
-  //END GPS Setup  
+  //END GPS Setup
 }
 
 int16_t packetnum = 0;  // packet counter, we increment per xmission
@@ -125,112 +125,144 @@ void loop() {
         Serial.print("Satellites: "); Serial.println((int)GPS.satellites);
       }
     }
-  
   }
   if(!MASTER){//This designates this unit as just a moisture sensor that will transmit to the master with the GSM module
     Serial.println("Sending to rf95_server");
     // Send a message to rf95_server
     moisture = analogRead(0);//Anolog reading of capaicitive moisture sensor
     Serial.print("\nLocal Moisture: ");
-    Serial.print(moisture);
+    Serial.println(moisture);
 
     char *radiopacket;
+    char timecode[8];//HHMMDDMM
     if(HAS_GPS){
-      char temp[10];
-      //TODO, work out size of radiopacket for GPS
-      radiopacket[0]='M';
-      radiopacket[1]=':';
-      itoa(moisture,radiopacket+2,10);//this shoudl be 3 characters
-      radiopacket[5]='h';
-      radiopacket[6]=':';
-      itoa(GPS.hour,radiopacket+7,10);
-      if(radiopacket[8]!='\0'){
-        radiopacket[8]='m';
-        radiopacket[10]=':';
-        itoa(GPS.minute,radiopacket+11,10);
-        radiopacket[13]='s';
-        radiopacket[14]=':';
-        itoa(GPS.seconds,radiopacket+15,10);
-        radiopacket[17]='u';
-        radiopacket[18]=':';
-        itoa(GPS.milliseconds,radiopacket+19,10);
-        radiopacket[20]='d';
-        radiopacket[21]=':';
-        itoa(GPS.day,radiopacket+23,10);
-        itoa(GPS.month,radiopacket+25,10);
-        itoa(GPS.year,radiopacket+27,10);
-        radiopacket[31]='l';
-        radiopacket[32]=':';
-        itoa(GPS.lat,radiopacket+33,10);
-        radiopacket[37]=',';
-        itoa(GPS.lon,radiopacket+38,10);
-      }
-      else{
-        radiopacket[07] == ' ';
-      }
+      char temp[5];
+//      char temp[10];
+//      //TODO, work out size of radiopacket for GPS
+      temp[0]='M';
+      temp[1]=':';
+      itoa(moisture,temp+2,10);//this shoudl be 3 characters
+      String rp(temp);
+      String timecode();
+      rp.concat("t:");
+      rp.concat(GPS.hour);
+      rp.concat(":");
+      rp.concat(GPS.minute);
+      rp.concat(":");
+      rp.concat(GPS.seconds);
+      rp.concat(".");
+      rp.concat(GPS.milliseconds);
+      rp.concat("d:");
+      rp.concat(GPS.day);
+      rp.concat(GPS.month);
+      rp.concat(GPS.year);
+      rp.concat("lan:");
+      rp.concat("GPS.lat");
+      rp.concat("lon:");
+      rp.concat("GPS.lon");
+      radiopacket = (char*)rp.c_str();
+      Serial.println(rp);
+      Serial.println(radiopacket);
+      
+      
     }
-    else{
-      radiopacket = (char*)malloc(sizeof(char)*34);
-      radiopacket[0]='M';
-      radiopacket[1]=':';
-      itoa(moisture,radiopacket+2,10);//Should be 3 characters, so radiopacket[2-4]
-      for(int i=0;i<LOC_CODE_LEN;i++){
-        radiopacket[5+i]=LOCATION_CODE[i];
-      }
-    }
-    
-    
-    Serial.print("Sending :"); Serial.println(radiopacket);
-
-    Serial.println("Sending..."); delay(10);
-    rf95.send((uint8_t *)radiopacket, sizeof(radiopacket));
-   
-    Serial.println("Waiting for packet to complete..."); delay(10);
+     else{
+       radiopacket = (char*)malloc(sizeof(char)*34);
+       radiopacket[0]='M';
+       radiopacket[1]=':';
+       itoa(moisture,radiopacket+2,10);//Should be 3 characters, so radiopacket[2-4]
+       for(int i=0;i<LOC_CODE_LEN;i++){
+         radiopacket[5+i]=LOCATION_CODE[i];
+       }
+     }
+    rf95.send((uint8_t *)timecode, sizeof(timecode));
     rf95.waitPacketSent();
-    //Now wait for a reply
-    uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
-    uint8_t len = sizeof(buf);
-   
-    Serial.println("Waiting for reply..."); delay(10);
-    if (rf95.waitAvailableTimeout(5000))
-    { 
-      // Should be a reply message for us now   
-      if (rf95.recv(buf, &len))
-     {
-//        digitalWrite(LED, HIGH);
-        Serial.print("Got reply: ");
-        Serial.println((char*)buf);
-        Serial.print("RSSI: ");
-        Serial.println(rf95.lastRssi(), DEC);    
-        delay(250);
-//        digitalWrite(LED, LOW);
+    Serial.print("Sending :"); Serial.println(radiopacket);
+    
+    for(int i=0;i<(sizeof(radiopacket)/8);i++){
+      char packet[8];
+      for(int j=0;j<8;j++){
+        packet[j]=radiopacket[i*8+j];
       }
-      else
+      rf95.send((uint8_t *)packet, sizeof(packet));
+      rf95.waitPacketSent();
+      Serial.print("Sending :"); Serial.println(packet);
+      Serial.println("Waiting for reply..."); delay(10);
+      if (rf95.waitAvailableTimeout(5000))
       {
-        Serial.println("Receive failed");
-      }
+        // Should be a reply message for us now
+        uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+      uint8_t len = sizeof(buf);
+        if (rf95.recv(buf, &len))
+       {
+  //        digitalWrite(LED, HIGH);
+          Serial.print("Got reply: ");
+          Serial.println((char*)buf);
+          Serial.print("RSSI: ");
+          Serial.println(rf95.lastRssi(), DEC);
+          delay(250);
+  //        digitalWrite(LED, LOW);
+        }
+        else
+        {
+          Serial.println("Receive failed");
+        }
+    }
+    Serial.print("End Sending :"); Serial.println(radiopacket);
+    rf95.send((uint8_t *)timecode, sizeof(timecode));
+    rf95.waitPacketSent();
+        //Serial.println(radiopacket);
+//        Serial.print("Sending :"); Serial.println(radiopacket);
+//  
+//        Serial.println("Sending..."); delay(10);
+//        rf95.send((uint8_t *)radiopacket, sizeof(radiopacket));
+  
+//      Serial.println("Waiting for packet to complete..."); delay(10);
+//      rf95.waitPacketSent();
+      //Now wait for a reply
+      uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+      uint8_t len = sizeof(buf);
+  
+      Serial.println("Waiting for reply..."); delay(10);
+      if (rf95.waitAvailableTimeout(5000))
+      {
+        // Should be a reply message for us now
+        if (rf95.recv(buf, &len))
+       {
+  //        digitalWrite(LED, HIGH);
+          Serial.print("Got reply: ");
+          Serial.println((char*)buf);
+          Serial.print("RSSI: ");
+          Serial.println(rf95.lastRssi(), DEC);
+          delay(250);
+  //        digitalWrite(LED, LOW);
+        }
+        else
+        {
+          Serial.println("Receive failed");
+        }
     }
     free(radiopacket);
-    delay(5*60*1000);
+    delay(30*1000);
   }
-  else if(MASTER){//Designates unit as having a GSM module.  
+  else if(MASTER){//Designates unit as having a GSM module.
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
     uint8_t len = sizeof(buf);
-    
+
     if (rf95.recv(buf, &len))
     {
       //digitalWrite(LED, HIGH);
       //RH_RF95::printBuffer("Received: ", buf, len);
       Serial.print("Remote Moisture: ");
       Serial.println((char*)buf);
-      //Serial.print("RSSI: ");
-      //Serial.println(rf95.lastRssi(), DEC);
+      Serial.print("RSSI: ");
+      Serial.println(rf95.lastRssi(), DEC);
       if(HAS_SENSOR){
-      moisture = analogRead(0);//Anolog reading of capaicitive moisture sensor
-      Serial.print("Local Moisture: ");
-      Serial.print(moisture);
+        moisture = analogRead(0);//Anolog reading of capaicitive moisture sensor
+        Serial.print("Local Moisture: ");
+        Serial.print(moisture);
       }
-      
+
       delay(10);
       // Send a reply
       delay(200); // may or may not be needed
@@ -245,4 +277,3 @@ void loop() {
     }
   }
 }
-  
